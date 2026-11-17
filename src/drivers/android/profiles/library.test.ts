@@ -106,11 +106,39 @@ describe("the Android device profile library", () => {
     expect([...LIBRARY_HARDWARE_KEYS].sort()).toEqual(expected);
   });
 
-  it("Pixel 9's hardware equals the values in the fixture config.ini", () => {
-    const expected = Object.fromEntries([...fixtureConfig()].filter(([key]) => isLibraryKey(key)));
+  it("Pixel 9's hardware equals the values in the fixture config.ini, with hw.camera.front emulated", () => {
+    const expected = {
+      ...Object.fromEntries([...fixtureConfig()].filter(([key]) => isLibraryKey(key))),
+      "hw.camera.front": "emulated",
+    };
 
     expect(pixel9().hardware).toEqual(expected);
     expect(pixel9().hardware["hw.ramSize"]).toBe("2G");
+  });
+
+  it("exactly the phone and tablet profiles the SDK gives a front camera set hw.camera.front to emulated, and every other profile sets none", () => {
+    const withFrontCamera = [
+      "medium_phone",
+      "medium_tablet",
+      "pixel_6",
+      "pixel_7",
+      "pixel_8",
+      "pixel_9",
+      "pixel_9_pro_xl",
+      "small_phone",
+    ];
+
+    expect(LIBRARY_PROFILES.length).toBeGreaterThan(withFrontCamera.length);
+    for (const profile of LIBRARY_PROFILES) {
+      expect(profile.hardware["hw.camera.front"], profile.id).toBe(
+        withFrontCamera.includes(profile.id) ? "emulated" : "none",
+      );
+    }
+    expect(
+      LIBRARY_PROFILES.filter((profile) => profile.hardware["hw.camera.front"] === "emulated")
+        .map((profile) => profile.id)
+        .sort(),
+    ).toEqual(withFrontCamera);
   });
 
   it("Pixel 9's class, image kind, API range, Play Store and tablet flags and boot properties are phone, none, 35-, yes, no, none", () => {

@@ -20,7 +20,7 @@ export const PIXEL_6: LibraryDeviceProfile = {
     "hw.battery": "yes",
     "hw.camera.back": "emulated",
     "hw.camera.back.orientation": "90",
-    "hw.camera.front": "none",
+    "hw.camera.front": "emulated",
     "hw.camera.front.orientation": "90",
     "hw.cpu.ncore": "4",
     "hw.dPad": "no",
