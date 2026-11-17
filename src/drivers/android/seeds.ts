@@ -446,7 +446,18 @@ export class Seeds {
           await this.#systemImages.installedImages(),
           await this.#adbTools.emulatorVersion(),
         );
-        if (reason === undefined) return ready;
+        // why: a seed keeps the `config.ini` it was made with, so a library camera that changed
+        // would never reach a host that already holds the seed. Only the camera keys are compared:
+        // the emulator rewrites other hardware values at boot, so comparing them would make every
+        // seed look changed.
+        const cameraChanged =
+          reason === undefined &&
+          profile.kind === "library" &&
+          (await this.#avdConfig.libraryCameraDiffers(
+            join(ready.folder, `${ready.avdName}.avd`),
+            profile,
+          ));
+        if (reason === undefined && !cameraChanged) return ready;
         await this.#removeSeed(ready);
       }
       return this.#makeSeed({ image, packageName, profile, spec, specKey });

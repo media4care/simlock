@@ -234,6 +234,56 @@ function reopened(
   return { ...part, runner };
 }
 
+/**
+ * why: a host that already holds a library seed made when the profile's front camera was `none`, then
+ * the daemon provisioning again after the library says `emulated`: the two parts share the folders
+ * and the source table, and differ only in the profile they are given.
+ */
+async function libraryCameraHarness() {
+  const profileWith = (front: string) =>
+    testLibraryProfile({
+      hardware: { "hw.camera.back": "emulated", "hw.camera.front": front, "hw.lcd.height": "100" },
+    });
+  const filesystem = await androidFilesystem({ images: [["35", "google_apis", "arm64-v8a"]] });
+  await filesystem.writeFileAtomic(
+    `${sdk}/system-images/android-35/google_apis/arm64-v8a/source.properties`,
+    "Pkg.Revision=1\nSystemImage.TagId=google_apis\n",
+  );
+  await writeSeedFiles(filesystem, seedHome, seedConfig([]));
+  const database = await memoryAndroidSourceDatabase();
+  const partFor = (
+    front: string,
+    expectations: readonly ScriptedProcessExpectation[],
+    ids: string[],
+  ) => {
+    const runner = new EmulatorExitingRunner([...expectations]);
+    const part = createPart(filesystem, runner, {
+      database,
+      deviceProfileSources: [{ profiles: async () => [profileWith(front)] }],
+      ids,
+    });
+    const provision = async () =>
+      part.seeds.provision(
+        await part.catalog.resolveSpec({
+          model: "Test Phone",
+          osVersion: "35",
+          platform: "android",
+        }),
+      );
+    return { provision, runner };
+  };
+  const first = partFor(
+    "none",
+    [
+      processResult(binaries.avdmanager, ["list", "device"], pixelDevices),
+      ...makingASeedFrom(seedHome),
+    ],
+    ["one", "two"],
+  );
+  await first.provision();
+  return { filesystem, partFor };
+}
+
 function libraryPixel9(): LibraryDeviceProfile {
   const profile = LIBRARY_PROFILES.find((candidate) => candidate.id === "pixel_9");
   if (profile === undefined) throw new Error("the library has no profile with id pixel_9");
@@ -847,6 +897,48 @@ describe("Seeds", () => {
       expect(await harness.filesystem.exists(seedHome)).toBe(false);
       expect(later.runner.calls.filter((call) => call.args[0] === "create")).toHaveLength(1);
       await expect(later.seeds.listSources()).resolves.toMatchObject([{ id: "seed_five" }]);
+    });
+
+    it("destroys a ready library seed whose config.ini camera differs from the profile and makes it again at the next provision", async () => {
+      const harness = await libraryCameraHarness();
+      const newHome = `${sources}/seed_five`;
+      await writeSeedFiles(harness.filesystem, newHome, seedConfig([]));
+      const later = harness.partFor(
+        "emulated",
+        [
+          processResult(binaries.emulator, ["-version"], "Android emulator version 36.1.9"),
+          processResult(binaries.avdmanager, ["list", "device"], pixelDevices),
+          ...makingASeedFrom(newHome),
+        ],
+        ["four", "five"],
+      );
+
+      await later.provision();
+
+      expect(await harness.filesystem.exists(seedHome)).toBe(false);
+      expect(later.runner.calls.filter((call) => call.args[0] === "create")).toHaveLength(1);
+      const config = await harness.filesystem.readFile(
+        `${avdDirectory}/simlock_four/simlock.avd/config.ini`,
+      );
+      expect(config.split("\n")).toContain("hw.camera.front=emulated");
+    });
+
+    it("reuses a ready library seed whose config.ini camera lines match the profile", async () => {
+      const harness = await libraryCameraHarness();
+      const later = harness.partFor(
+        "none",
+        [processResult(binaries.emulator, ["-version"], "Android emulator version 36.1.9")],
+        ["four", "five"],
+      );
+
+      await later.provision();
+
+      expect(later.runner.calls.filter((call) => call.args[0] === "create")).toHaveLength(0);
+      expect(await harness.filesystem.exists(seedHome)).toBe(true);
+      const config = await harness.filesystem.readFile(
+        `${avdDirectory}/simlock_four/simlock.avd/config.ini`,
+      );
+      expect(config.split("\n")).toContain("hw.camera.front=none");
     });
 
     it("removes a seed's folder and row and throws when making it fails at any step", async () => {

@@ -9,6 +9,7 @@ export const MARK_READ_TIMEOUT_MS = 5_000;
 export const ERASABLE_MARK_READ_BYTES = 4096;
 export const ERASABLE_MARK_PATH = "/data/local/tmp/simlock-mark.json";
 const DURABLE_MARK_KEY = "simlock.mark";
+const CAMERA_KEYS = ["hw.camera.back", "hw.camera.front"] as const;
 
 export interface AvdConfigOptions {
   readonly adb: string;
@@ -48,6 +49,22 @@ export class AvdConfig {
     } else if (await this.#options.filesystem.exists(bootPropPath)) {
       await this.#options.filesystem.rm(bootPropPath);
     }
+  }
+
+  async libraryCameraDiffers(
+    folder: string,
+    profile: Extract<DeviceProfile, { readonly kind: "library" }>,
+  ): Promise<boolean> {
+    let lines: string[];
+    try {
+      lines = (await this.#options.filesystem.readFile(`${folder}/config.ini`)).split(/\r?\n/);
+    } catch {
+      lines = [];
+    }
+    return CAMERA_KEYS.some((key) => {
+      const line = lines.find((entry) => entry.startsWith(`${key}=`));
+      return line?.slice(key.length + 1).trim() !== profile.hardware[key];
+    });
   }
 
   async applyHardwareProperties(
